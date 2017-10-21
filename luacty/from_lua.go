@@ -100,9 +100,108 @@ func (c *Converter) toCtyValue(val lua.LValue, ty cty.Type, path cty.Path) (cty.
 			}
 			return strV, nil
 		}
+	case ty.IsObjectType():
+		return c.toCtyObject(val, ty, path)
+	case ty.IsTupleType():
+		return c.toCtyTuple(val, ty, path)
 	default:
 		return cty.DynamicVal, path.NewErrorf("%s values are not allowed", val.Type().String())
 	}
+}
+
+func (c *Converter) toCtyObject(val lua.LValue, ty cty.Type, path cty.Path) (cty.Value, error) {
+	if val.Type() != lua.LTTable {
+		return cty.DynamicVal, path.NewErrorf("a table is required")
+	}
+
+	attrs := map[string]cty.Value{}
+	table := val.(*lua.LTable)
+
+	// Make sure we have capacity in our path array for our key step
+	path = append(path, cty.PathStep(nil))
+
+	atys := ty.AttributeTypes()
+	for name, aty := range atys {
+		path[len(path)-1] = cty.GetAttrStep{
+			Name: name,
+		}
+		avL := table.RawGet(lua.LString(name))
+		av, err := c.toCtyValue(avL, aty, path)
+		if err != nil {
+			return cty.DynamicVal, err
+		}
+		attrs[name] = av
+	}
+
+	var err error
+	table.ForEach(func(key lua.LValue, value lua.LValue) {
+		if err != nil {
+			return
+		}
+		if key.Type() != lua.LTString {
+			err = path.NewErrorf("unexpected key %q", key.String())
+			return
+		}
+		if _, expected := atys[string(key.(lua.LString))]; !expected {
+			err = path.NewErrorf("unexpected key %q", key.String())
+			return
+		}
+	})
+	if err != nil {
+		return cty.DynamicVal, err
+	}
+
+	return cty.ObjectVal(attrs), nil
+}
+
+func (c *Converter) toCtyTuple(val lua.LValue, ty cty.Type, path cty.Path) (cty.Value, error) {
+	if val.Type() != lua.LTTable {
+		return cty.DynamicVal, path.NewErrorf("a table is required")
+	}
+
+	etys := ty.TupleElementTypes()
+	elems := make([]cty.Value, len(etys))
+	table := val.(*lua.LTable)
+
+	// Make sure we have capacity in our path array for our index step
+	path = append(path, cty.PathStep(nil))
+
+	for i, ety := range etys {
+		path[len(path)-1] = cty.IndexStep{
+			Key: cty.NumberIntVal(int64(i)),
+		}
+		evL := table.RawGet(lua.LNumber(float64(i + 1))) // lua tables are 1-indexed
+		ev, err := c.toCtyValue(evL, ety, path)
+		if err != nil {
+			return cty.DynamicVal, err
+		}
+		elems[i] = ev
+	}
+
+	var err error
+	table.ForEach(func(key lua.LValue, value lua.LValue) {
+		if err != nil {
+			return
+		}
+		if key.Type() != lua.LTNumber {
+			err = path.NewErrorf("unexpected key %q", key.String())
+			return
+		}
+		i := float64(key.(lua.LNumber))
+		if i != float64(int(i)) {
+			err = path.NewErrorf("unexpected key %q", key.String())
+			return
+		}
+		if int(i) > len(etys) {
+			err = path.NewErrorf("index out of range %d", int(i))
+			return
+		}
+	})
+	if err != nil {
+		return cty.DynamicVal, err
+	}
+
+	return cty.TupleVal(elems), nil
 }
 
 // ImpliedCtyType attempts to produce a cty Type that is suitable to recieve

@@ -114,13 +114,117 @@ func TestConverterToCtyValue(t *testing.T) {
 			false,
 		},
 
-		"table to dynamic": {
+		"table to object": {
+			func(L *lua.LState) lua.LValue {
+				table := L.NewTable()
+				table.RawSet(lua.LString("greeting"), lua.LString("hello"))
+				return table
+			},
+			cty.Object(map[string]cty.Type{
+				"greeting": cty.String,
+			}),
+			cty.ObjectVal(map[string]cty.Value{
+				"greeting": cty.StringVal("hello"),
+			}),
+			false,
+		},
+		"table to object (extra keys)": {
+			func(L *lua.LState) lua.LValue {
+				table := L.NewTable()
+				table.RawSet(lua.LString("greeting"), lua.LString("hello"))
+				return table
+			},
+			cty.EmptyObject,
+			cty.DynamicVal,
+			true, // unexpected key "greeting"
+		},
+		"table to object (missing keys)": {
 			func(L *lua.LState) lua.LValue {
 				return L.NewTable()
 			},
-			cty.DynamicPseudoType,
+			cty.Object(map[string]cty.Type{
+				"greeting": cty.String,
+			}),
+			cty.ObjectVal(map[string]cty.Value{
+				"greeting": cty.NullVal(cty.String),
+			}),
+			false,
+		},
+		"table to object (indices present)": {
+			func(L *lua.LState) lua.LValue {
+				table := L.NewTable()
+				table.Append(lua.LString("hello"))
+				return table
+			},
+			cty.EmptyObject,
 			cty.DynamicVal,
-			true, // tables are not yet supported
+			true, // unexpected key "1"
+		},
+		"table to tuple": {
+			func(L *lua.LState) lua.LValue {
+				table := L.NewTable()
+				table.Append(lua.LString("hello"))
+				table.Append(lua.LString("12"))
+				return table
+			},
+			cty.Tuple([]cty.Type{
+				cty.String,
+				cty.Number,
+			}),
+			cty.TupleVal([]cty.Value{
+				cty.StringVal("hello"),
+				cty.NumberIntVal(12),
+			}),
+			false,
+		},
+		"table to tuple (extra indices present)": {
+			func(L *lua.LState) lua.LValue {
+				table := L.NewTable()
+				table.Append(lua.LString("hello"))
+				return table
+			},
+			cty.EmptyTuple,
+			cty.DynamicVal,
+			true, // index 1 out of range
+		},
+		"table to tuple (insufficient indices present)": {
+			func(L *lua.LState) lua.LValue {
+				return L.NewTable()
+			},
+			cty.Tuple([]cty.Type{
+				cty.String,
+				cty.Number,
+			}),
+			cty.TupleVal([]cty.Value{
+				cty.NullVal(cty.String),
+				cty.NullVal(cty.Number),
+			}),
+			false,
+		},
+		"table to tuple (keys present)": {
+			func(L *lua.LState) lua.LValue {
+				table := L.NewTable()
+				table.RawSet(lua.LString("greeting"), lua.LString("hello"))
+				return table
+			},
+			cty.Tuple([]cty.Type{
+				cty.String,
+				cty.Number,
+			}),
+			cty.DynamicVal,
+			true, // unexpected key "greeting"
+		},
+		"table to dynamic": {
+			func(L *lua.LState) lua.LValue {
+				table := L.NewTable()
+				table.RawSet(lua.LString("greeting"), lua.LString("hello"))
+				return table
+			},
+			cty.DynamicPseudoType,
+			cty.ObjectVal(map[string]cty.Value{
+				"greeting": cty.StringVal("hello"),
+			}),
+			false,
 		},
 		"table to bool": {
 			func(L *lua.LState) lua.LValue {
