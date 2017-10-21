@@ -40,6 +40,43 @@ func TestConverterWrapCtyValue(t *testing.T) {
 			`,
 		},
 
+		"less than": {
+			map[string]cty.Value{
+				"a": cty.NumberIntVal(0),
+				"b": cty.NumberIntVal(2),
+			},
+			`
+				assert(a < b)
+			`,
+		},
+		"less than (false)": {
+			map[string]cty.Value{
+				"a": cty.NumberIntVal(2),
+				"b": cty.NumberIntVal(0),
+			},
+			`
+				assert(not (a < b))
+			`,
+		},
+		"less than or equal": {
+			map[string]cty.Value{
+				"a": cty.NumberIntVal(0),
+				"b": cty.NumberIntVal(0),
+			},
+			`
+				assert(a <= b)
+			`,
+		},
+		"greater than": {
+			map[string]cty.Value{
+				"a": cty.NumberIntVal(2),
+				"b": cty.NumberIntVal(0),
+			},
+			`
+				assert(a > b)
+			`,
+		},
+
 		"add": {
 			map[string]cty.Value{
 				"a":    cty.NumberIntVal(2),
@@ -124,6 +161,158 @@ func TestConverterWrapCtyValue(t *testing.T) {
 			`
 				result = -a
 				assert(result == want)
+			`,
+		},
+
+		"concat": {
+			map[string]cty.Value{
+				"a":    cty.StringVal("hey"),
+				"b":    cty.StringVal("world"),
+				"want": cty.StringVal("heyworld"),
+			},
+			`
+				result = a .. b
+				assert(result == want)
+			`,
+		},
+		"concat with lua string": {
+			map[string]cty.Value{
+				"a":    cty.StringVal("hey"),
+				"want": cty.StringVal("hey world"),
+			},
+			`
+				result = a .. " world"
+				assert(result == want)
+			`,
+		},
+		"concat with lua number": {
+			map[string]cty.Value{
+				"a":    cty.StringVal("hey"),
+				"want": cty.StringVal("hey6"),
+			},
+			`
+				result = a .. 6
+				assert(result == want)
+			`,
+		},
+		"concat with number": {
+			map[string]cty.Value{
+				"a":    cty.StringVal("hey"),
+				"b":    cty.NumberIntVal(2),
+				"want": cty.StringVal("hey2"),
+			},
+			`
+				result = a .. b
+				assert(result == want)
+			`,
+		},
+		"concat with bool": {
+			map[string]cty.Value{
+				"a":    cty.StringVal("hey"),
+				"b":    cty.True,
+				"want": cty.StringVal("heytrue"),
+			},
+			`
+				result = a .. b
+				assert(result == want)
+			`,
+		},
+
+		"len with string": {
+			map[string]cty.Value{
+				"a":    cty.StringVal("hey"),
+				"want": cty.NumberIntVal(3),
+			},
+			`
+				result = #a
+				assert(result == want)
+			`,
+		},
+		"len with tuple": {
+			map[string]cty.Value{
+				"a":    cty.EmptyTupleVal,
+				"want": cty.NumberIntVal(0),
+			},
+			`
+				result = #a
+				assert(result == want)
+			`,
+		},
+
+		"index into map": {
+			map[string]cty.Value{
+				"a":    cty.MapVal(map[string]cty.Value{"greeting": cty.StringVal("hello")}),
+				"want": cty.StringVal("hello"),
+			},
+			`
+				result = a.greeting
+				assert(result == want)
+			`,
+		},
+		"index into map (absent key)": {
+			map[string]cty.Value{
+				"a": cty.MapValEmpty(cty.String),
+			},
+			`
+				result = a.greeting
+				assert(result == nil)
+			`,
+		},
+		"index into list": {
+			map[string]cty.Value{
+				"a":    cty.ListVal([]cty.Value{cty.StringVal("hello")}),
+				"want": cty.StringVal("hello"),
+			},
+			`
+				result = a[0]
+				assert(result == want)
+			`,
+		},
+		"index into list (absent index)": {
+			map[string]cty.Value{
+				"a": cty.ListVal([]cty.Value{cty.StringVal("hello")}),
+			},
+			`
+				result = a[1]
+				assert(result == nil)
+			`,
+		},
+		"index into object": {
+			map[string]cty.Value{
+				"a":    cty.ObjectVal(map[string]cty.Value{"greeting": cty.StringVal("hello")}),
+				"want": cty.StringVal("hello"),
+			},
+			`
+				result = a.greeting
+				assert(result == want)
+			`,
+		},
+		"index into object (absent attr)": {
+			map[string]cty.Value{
+				"a": cty.EmptyObjectVal,
+			},
+			`
+				result = a.greeting
+				assert(result == nil)
+			`,
+		},
+		"index into tuple": {
+			map[string]cty.Value{
+				"a":    cty.TupleVal([]cty.Value{cty.StringVal("hello")}),
+				"want": cty.StringVal("hello"),
+			},
+			`
+				result = a[0]
+				assert(result == want)
+			`,
+		},
+		"index into tuple (absent index)": {
+			map[string]cty.Value{
+				"a": cty.TupleVal([]cty.Value{cty.StringVal("hello")}),
+			},
+			`
+				result = a[1]
+				assert(result == nil)
 			`,
 		},
 	}
