@@ -11,12 +11,12 @@ import (
 // to create new values and to interact with the Lua stack during operations.
 type Converter struct {
 	lstate    *lua.LState
-	metatable lua.LValue
+	metatable *lua.LTable
 }
 
 // NewConverter creates and returns a new Converter for the given Lua state.
-func NewConverter(L *lua.LState) Converter {
-	c := Converter{
+func NewConverter(L *lua.LState) *Converter {
+	c := &Converter{
 		lstate: L,
 	}
 	c.metatable = c.ctyMetatable()
