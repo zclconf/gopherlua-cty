@@ -261,6 +261,63 @@ func TestConverterToCtyValue(t *testing.T) {
 			cty.DynamicVal,
 			true, // all values must be of the same type
 		},
+		"table to list of string": {
+			func(L *lua.LState) lua.LValue {
+				table := L.NewTable()
+				table.Append(lua.LString("hello"))
+				table.Append(lua.LNumber(10))
+				return table
+			},
+			cty.List(cty.String),
+			cty.ListVal([]cty.Value{
+				cty.StringVal("hello"),
+				cty.StringVal("10"),
+			}),
+			false,
+		},
+		"table to list of string (empty)": {
+			func(L *lua.LState) lua.LValue {
+				return L.NewTable()
+			},
+			cty.List(cty.String),
+			cty.ListValEmpty(cty.String),
+			false,
+		},
+		"table to list of string (non-int keys present)": {
+			func(L *lua.LState) lua.LValue {
+				table := L.NewTable()
+				table.RawSet(lua.LString("greeting"), lua.LString("hello"))
+				return table
+			},
+			cty.List(cty.String),
+			cty.DynamicVal,
+			true, // unexpected key "greeting"
+		},
+		"table to list of dynamic": {
+			func(L *lua.LState) lua.LValue {
+				table := L.NewTable()
+				table.Append(lua.LString("hello"))
+				table.Append(lua.LBool(true))
+				return table
+			},
+			cty.List(cty.DynamicPseudoType),
+			cty.ListVal([]cty.Value{
+				cty.StringVal("hello"),
+				cty.StringVal("true"),
+			}),
+			false,
+		},
+		"table to list of dynamic (incompatible types)": {
+			func(L *lua.LState) lua.LValue {
+				table := L.NewTable()
+				table.Append(lua.LNumber(10))
+				table.Append(lua.LBool(true))
+				return table
+			},
+			cty.List(cty.DynamicPseudoType),
+			cty.DynamicVal,
+			true, // all values must be of the same type
+		},
 		"table to dynamic": {
 			func(L *lua.LState) lua.LValue {
 				table := L.NewTable()

@@ -101,6 +101,8 @@ func (c *Converter) toCtyValue(val lua.LValue, ty cty.Type, path cty.Path) (cty.
 		return c.toCtyTuple(val, ty, path)
 	case ty.IsMapType():
 		return c.toCtyMap(val, ty, path)
+	case ty.IsListType() || ty.IsSetType():
+		return c.toCtyListOrSet(val, ty, path)
 	default:
 		return cty.DynamicVal, path.NewErrorf("%s values are not allowed", val.Type().String())
 	}
@@ -189,7 +191,7 @@ func (c *Converter) toCtyTuple(val lua.LValue, ty cty.Type, path cty.Path) (cty.
 			err = path.NewErrorf("unexpected key %q", key.String())
 			return
 		}
-		if int(i) > len(etys) {
+		if int(i) < 1 || int(i) > len(etys) {
 			err = path.NewErrorf("index out of range %d", int(i))
 			return
 		}
@@ -255,6 +257,7 @@ func (c *Converter) toCtyMap(val lua.LValue, ty cty.Type, path cty.Path) (cty.Va
 		if uTy == cty.NilType {
 			return cty.DynamicVal, path.NewErrorf("all values must be of the same type")
 		}
+		ety = uTy
 		for i, conv := range convs {
 			if conv == nil {
 				continue
@@ -276,6 +279,96 @@ func (c *Converter) toCtyMap(val lua.LValue, ty cty.Type, path cty.Path) (cty.Va
 	}
 
 	return cty.MapVal(elems), nil
+}
+
+func (c *Converter) toCtyListOrSet(val lua.LValue, ty cty.Type, path cty.Path) (cty.Value, error) {
+	if val.Type() != lua.LTTable {
+		return cty.DynamicVal, path.NewErrorf("a table is required")
+	}
+
+	table := val.(*lua.LTable)
+	l := table.Len()
+
+	ety := ty.ElementType()
+	elems := make([]cty.Value, l)
+
+	for i := 0; i < l; i++ {
+		path := append(path, cty.IndexStep{
+			Key: cty.NumberIntVal(int64(i)),
+		})
+
+		value := table.RawGetInt(i + 1)
+		valueV, valueErr := c.toCtyValue(value, ety, path)
+		if valueErr != nil {
+			return cty.DynamicVal, path.NewError(valueErr)
+		}
+
+		elems[i] = valueV
+	}
+
+	var err error
+	table.ForEach(func(key lua.LValue, value lua.LValue) {
+		if err != nil {
+			return
+		}
+		if key.Type() != lua.LTNumber {
+			err = path.NewErrorf("unexpected key %q", key.String())
+			return
+		}
+		i := float64(key.(lua.LNumber))
+		if i != float64(int(i)) {
+			err = path.NewErrorf("unexpected key %q", key.String())
+			return
+		}
+		if int(i) < 1 || int(i) > l {
+			err = path.NewErrorf("index out of range %d", int(i))
+			return
+		}
+	})
+	if err != nil {
+		return cty.DynamicVal, err
+	}
+
+	// If our element type is DynamicPseudoType then the caller wants us to
+	// choose a single element type to unify all of the values.
+	if ety == cty.DynamicPseudoType {
+		etys := make([]cty.Type, len(elems))
+		for i, v := range elems {
+			etys[i] = v.Type()
+		}
+		uTy, convs := convert.Unify(etys)
+		if uTy == cty.NilType {
+			return cty.DynamicVal, path.NewErrorf("all values must be of the same type")
+		}
+		for i, conv := range convs {
+			if conv == nil {
+				continue
+			}
+
+			path := append(path, cty.IndexStep{
+				Key: cty.NumberIntVal(int64(i)),
+			})
+
+			elems[i], err = conv(elems[i])
+			if err != nil {
+				return cty.DynamicVal, path.NewError(err)
+			}
+		}
+	}
+
+	if len(elems) == 0 {
+		if ty.IsSetType() {
+			return cty.SetValEmpty(ety), nil
+		} else {
+			return cty.ListValEmpty(ety), nil
+		}
+	}
+
+	if ty.IsSetType() {
+		return cty.SetVal(elems), nil
+	} else {
+		return cty.ListVal(elems), nil
+	}
 }
 
 // ImpliedCtyType attempts to produce a cty Type that is suitable to recieve
