@@ -214,6 +214,53 @@ func TestConverterToCtyValue(t *testing.T) {
 			cty.DynamicVal,
 			true, // unexpected key "greeting"
 		},
+		"table to map of string": {
+			func(L *lua.LState) lua.LValue {
+				table := L.NewTable()
+				table.RawSet(lua.LString("greeting"), lua.LString("hello"))
+				table.Append(lua.LNumber(10))
+				return table
+			},
+			cty.Map(cty.String),
+			cty.MapVal(map[string]cty.Value{
+				"greeting": cty.StringVal("hello"),
+				"1":        cty.StringVal("10"),
+			}),
+			false,
+		},
+		"table to map of string (empty)": {
+			func(L *lua.LState) lua.LValue {
+				return L.NewTable()
+			},
+			cty.Map(cty.String),
+			cty.MapValEmpty(cty.String),
+			false,
+		},
+		"table to map of dynamic": {
+			func(L *lua.LState) lua.LValue {
+				table := L.NewTable()
+				table.RawSet(lua.LString("greeting"), lua.LString("hello"))
+				table.Append(lua.LBool(true))
+				return table
+			},
+			cty.Map(cty.DynamicPseudoType),
+			cty.MapVal(map[string]cty.Value{
+				"greeting": cty.StringVal("hello"),
+				"1":        cty.StringVal("true"),
+			}),
+			false,
+		},
+		"table to map of dynamic (incompatible types)": {
+			func(L *lua.LState) lua.LValue {
+				table := L.NewTable()
+				table.RawSet(lua.LString("num"), lua.LNumber(10))
+				table.RawSet(lua.LString("bool"), lua.LBool(true))
+				return table
+			},
+			cty.Map(cty.DynamicPseudoType),
+			cty.DynamicVal,
+			true, // all values must be of the same type
+		},
 		"table to dynamic": {
 			func(L *lua.LState) lua.LValue {
 				table := L.NewTable()

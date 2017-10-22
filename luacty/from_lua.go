@@ -99,6 +99,8 @@ func (c *Converter) toCtyValue(val lua.LValue, ty cty.Type, path cty.Path) (cty.
 		return c.toCtyObject(val, ty, path)
 	case ty.IsTupleType():
 		return c.toCtyTuple(val, ty, path)
+	case ty.IsMapType():
+		return c.toCtyMap(val, ty, path)
 	default:
 		return cty.DynamicVal, path.NewErrorf("%s values are not allowed", val.Type().String())
 	}
@@ -197,6 +199,83 @@ func (c *Converter) toCtyTuple(val lua.LValue, ty cty.Type, path cty.Path) (cty.
 	}
 
 	return cty.TupleVal(elems), nil
+}
+
+func (c *Converter) toCtyMap(val lua.LValue, ty cty.Type, path cty.Path) (cty.Value, error) {
+	if val.Type() != lua.LTTable {
+		return cty.DynamicVal, path.NewErrorf("a table is required")
+	}
+
+	ety := ty.ElementType()
+	elems := make(map[string]cty.Value)
+	table := val.(*lua.LTable)
+
+	// Make sure we have capacity in our path array for our index step
+	path = append(path, cty.PathStep(nil))
+	path = path[:len(path)-1]
+
+	var err error
+	table.ForEach(func(key lua.LValue, value lua.LValue) {
+		if err != nil {
+			return
+		}
+		keyV, keyErr := c.toCtyValue(key, cty.String, path)
+		if keyErr != nil {
+			err = path.NewErrorf("invalid key %s: %s", key.String(), keyErr)
+			return
+		}
+		path = append(path, cty.IndexStep{
+			Key: keyV,
+		})
+
+		valueV, valueErr := c.toCtyValue(value, ety, path)
+		if valueErr != nil {
+			err = path.NewError(valueErr)
+			return
+		}
+
+		elems[keyV.AsString()] = valueV
+	})
+	if err != nil {
+		return cty.DynamicVal, err
+	}
+
+	// If our element type is DynamicPseudoType then the caller wants us to
+	// choose a single element type to unify all of the values.
+	if ety == cty.DynamicPseudoType {
+		names := make([]string, len(elems))
+		etys := make([]cty.Type, len(elems))
+		i := 0
+		for k, v := range elems {
+			names[i] = k
+			etys[i] = v.Type()
+			i++
+		}
+		uTy, convs := convert.Unify(etys)
+		if uTy == cty.NilType {
+			return cty.DynamicVal, path.NewErrorf("all values must be of the same type")
+		}
+		for i, conv := range convs {
+			if conv == nil {
+				continue
+			}
+
+			path := append(path, cty.IndexStep{
+				Key: cty.StringVal(names[i]),
+			})
+
+			elems[names[i]], err = conv(elems[names[i]])
+			if err != nil {
+				return cty.DynamicVal, path.NewError(err)
+			}
+		}
+	}
+
+	if len(elems) == 0 {
+		return cty.MapValEmpty(ety), nil
+	}
+
+	return cty.MapVal(elems), nil
 }
 
 // ImpliedCtyType attempts to produce a cty Type that is suitable to recieve
