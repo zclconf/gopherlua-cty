@@ -90,15 +90,10 @@ func (c *Converter) toCtyValue(val lua.LValue, ty cty.Type, path cty.Path) (cty.
 			nv := string(val.(lua.LString))
 			return cty.StringVal(nv), nil
 		default:
-			dyVal, err := c.toCtyValue(val, cty.DynamicPseudoType, path)
-			if err != nil {
-				return cty.DynamicVal, err
+			if !lua.LVCanConvToString(val) {
+				return cty.DynamicVal, path.NewErrorf("a string is required")
 			}
-			strV, err := convert.Convert(dyVal, cty.String)
-			if err != nil {
-				return cty.DynamicVal, path.NewError(err)
-			}
-			return strV, nil
+			return cty.StringVal(lua.LVAsString(val)), nil
 		}
 	case ty.IsObjectType():
 		return c.toCtyObject(val, ty, path)
